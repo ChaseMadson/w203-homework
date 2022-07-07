@@ -1,0 +1,207 @@
+---
+title: 'Q3 Federal Elections Exercise'
+subtitle: 'Unit 9 Coding Homework - W203 Section 8'
+author: 'Chase Madson' 
+header-includes:
+   - \usepackage{float}
+   - \usepackage{lipsum}
+output:
+  pdf_document:
+    toc: true
+    toc_depth: 3
+---
+
+\setcounter{page}{1}
+
+```{r Setup, include=FALSE}
+library(tidyverse)
+library(stats)
+library(sandwich)
+library(lmtest)
+library(stargazer)
+library(fec16)
+
+knitr::opts_chunk$set(echo=FALSE, message=FALSE)
+
+```
+
+\break
+
+**The Setup**: There is a lot of money that is spent in politics in Presidential election years. Like, a lot, a lot. Estimates and analysis from the US Federal Election Comission, puts the total amount at about \$14,400,000,000 (\$14.4 billion USD). For context, Twitter's 2020 annual revenue was about \$3,500,000,000 (\$3.5 billion USD).
+
+**The Work**:
+
+The package `fec16` is a compendium of spending and results from the 2016 election cycle. In this dataset are 9 different datasets that cover:
+
+-   candidates: candidate attributes, like their name, a unique id of the candidate, the election year under consideration, the office they're running for, etc.
+-   results_house: race attributes, like the name of the candidates running in the election, a unique id of the candidate, the number of general_votes garnered by each candidate, and other information.
+-   campaigns: financial information for each house & senate campaign. This includes a unique candidate id, the total receipts (how much came in the doors), and total disbursements (the total spent by the campaign), the total contributed by party central committees, and other information.
+
+**Your Task**: *Describe the relationship between spending on a candidate's behalf and the votes they receive.*
+
+If it is helpful to structure your response, you might want to place yourself into a scenario where you are advising a person or business about whether they should make a political donation. While the benefits that accrue as a result of a successful investment are unclear, you can be quite sure that investing with no return (i.e. more spending does not increase the chances of winning) is a bad idea.
+
+**Your Work:**
+
+-   We want to keep this work *relatively* constrained, which is why we're providing you with data through the `fec16` package. It is possible to gather all the information from current FEC reports, but it would require you to make a series of API calls that would pull us away from the core modeling tasks that we want you to focus on instead.
+
+-   Throughout this assignment, limit yourself to functions that are within the `tidyverse` family of packages: `dplyr`, `ggplot`, `patchwork`, and `magrittr` for wrangling and exploration and `base`, `stats`, `sandwich` and `lmtest` for modeling and testing. You do not *have* to use these packages; but try to limit yourself to using only these.
+
+-   Our choice to encourage you to use only these packages is to try to cut down on the amount of searching that you do: to help you avoid looking for the *"one package that does the thing I need it to do."* Certainly, such a package exists, but it will very likely be more productive for you to write things yourself than to try and find it for this homework.
+
+\break
+
+# Exploring
+
+## 3.1 Make Histograms pt 1
+
+In separate histograms, show both the distribution of votes (measured in results_house\$general_percent for now) and spending (measured in ttl_disb). **How is the distribution of general_percent shaped?**
+
+```{r, fig.width=4, fig.height=3, fig.align='center'}
+results_house %>% 
+  filter(!is.na(general_percent)) %>% 
+  ggplot(mapping = aes(x = general_percent)) + 
+  geom_histogram(bins = 50) + 
+  labs(title = 'Distribution of General Election Vote %', 
+       x = '% of Votes in the General Election, by Candidate', 
+       y = 'Number of Candidates') + 
+  scale_x_continuous(labels = scales::percent)
+
+```
+
+> This distribution appears to skew to the right
+
+## 3.2 Make Histograms pt 2
+
+In separate histograms, show both the distribution of votes (measured in results_house\$general_percent for now) and spending (measured in ttl_disb). **How is the distribution of ttl_disb shaped?**
+
+```{r, fig.width=4, fig.height=3, fig.align='center'}
+campaigns %>% 
+  ggplot(mapping = aes(x = ttl_disb)) + 
+  geom_histogram(bins = 50)
+
+```
+
+## 3.3 Build a Data Frame pt 1
+
+Create a new dataframe by joining results_house and campaigns using the inner_join function from dplyr on the field cand_id. **How many rows are in the new dataframe?**
+
+```{r}
+campaigns_results <- 
+  results_house %>% 
+  inner_join(campaigns, by = 'cand_id')
+
+campaigns_results %>% 
+  nrow
+
+```
+
+> After joining the two tables we have 1342 rows
+
+## 3.4 Build a Data Frame pt 2
+
+Create a new dataframe by joining results_house and campaigns using the inner_join function from dplyr on the field cand_id. **How many columns are in the new dataframe?**
+
+```{r}
+campaigns_results %>% 
+  ncol
+
+```
+
+> After joining the two tables we have 37 columns
+
+## 3.5 Indicator Variables and Scatter Plot
+
+Create a new variable candidate_party to indicate whether each individual is a "Democrat", "Republican" or "Other Party" based on the party column
+
+Note: Both the party column from results_house table and the cand_pty_affiliation column from the campaigns table contain information about the candidate's party. party is the party that the candidate actually ran as in their race, while cand_pty_affiliation is the party that the candidate self-identified as with the FEC. The two columns may not necessarily match. (e.g. Let's think about Bernie Sanders. He has identified himself to the FEC as an independent. When he ran for president, he actually ran as a democrat.)
+
+Use ggplot to produce a scatter plot of general_votes on the y-axis and ttl_disb on the x-axis and color the points by party membership. You do not need to apply any transformations to the variables before plotting.
+
+```{r}
+campaigns_results <- 
+  campaigns_results %>% 
+  mutate(candidate_party = case_when(
+    party == 'REP' ~ 'Republican', 
+    party == 'DEM' ~ 'Democrat', 
+    TRUE ~ 'Other Party') %>% 
+      factor(levels = c('Other Party', 'Democrat', 'Republican')))
+
+campaigns_results %>% 
+  ggplot(mapping = aes(x = ttl_disb, y = general_votes, 
+                       color = candidate_party)) + 
+  geom_point(alpha = 0.3) + 
+  scale_color_manual(values = c('blue', 'green', 'red')) + 
+  scale_x_continuous(labels = scales::dollar_format()) +
+  scale_y_continuous(labels = scales::label_comma()) + 
+  labs(title = 'Frequency of Candidate Parties', 
+       x = 'Total Disbursements', 
+       y = 'Votes in the General Election', 
+       color = 'Party Ran As:')
+
+ggsave('Q3_5_scatter.png')
+
+```
+
+# Regression
+
+## 3.6 Evaluate large sample assumptions
+
+Produce a linear regression with the outcome general_votes on ttl_disb and candidate_party. Do not apply transformations to these variables.
+
+Evaluate the large-sample linear model assumptions presenting evidence based on your background knowledge, visualizations, and numerical summaries. Please limit your answer for this subpart evaluating both assumptions to no more than a page in total. Written responses should be no longer than 5 sentences for each assumption.
+
+Upload your argument about the large-sample assumptions here. Your answer for this part cannot exceed a page
+
+
+
+```{r, echo=FALSE}
+fit1 <- 
+  campaigns_results %>% 
+  lm(data = .,
+     formula = general_votes ~ ttl_disb + candidate_party)
+
+fit1 %>% 
+  summary
+
+```
+
+For OLS in a large sample $(n>100)$, we need to verify a few assumptions.
+
+1.  The data must be IID
+
+    - Each observation is drawn from political candidates runnning in a 2016 election. We may see violations of IID in this circumstance given that there is strong regional clustering of a candidate's success based on their party and geographic location. If there are two candidates from the same state, there is likely some covariance between their political parties. Therefore we would consider this assumption likely violated.  
+
+
+2.  A unique BLP exists
+
+    -   The existence of a BLP may be in question since the predictor ttl_disb, which we saw before in **Q3.2** was severely right-skewed. This causes the covariance between this predictor and the other variables to be infinite. Therefore we would consider this assumption likely violated, and log-transformation may be an appropriate remedy. However, if there is a lot of skew in the data, then the n must be large enough to overcome it. Here we have $n>1000$ in addition to a strong skew, which may be enough.
+
+    -   The uniqueness of the BLP appears to be valid - it does not appear reasonable to write one predictor as a linear combination of another. The budget of a campaign may have some relationship to the party (especially for third-party candidates), but this is not extreme enough to invite perffect collinearity.
+
+For OLS in a large sample $(n>100)$, we need to verify a few assumptions.
+
+## 3.7 Build a stargazer table
+
+Produce a latex formatted Stargazer table that shows the model that you created. Make sure that you are using appropriate standard errors. This table should be of the same quality that you would upload for a lab (title, english words instead of variable_names, etc.)
+
+Upload the table along with the stargazer command used to generate it. You should also include any commands used to generate your appropriate standard errors.
+
+```{r, results='asis'}
+stargazer(fit1, header=FALSE, type='latex')
+
+```
+
+## 3.8 Money's Relationship with Votes
+
+```{r}
+
+
+```
+
+## 3.9 Party's Relationship with Votes
+
+```{r}
+
+
+```

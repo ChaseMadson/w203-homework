@@ -1,0 +1,55 @@
+---
+title: 'Q3.7 Regression - Build a stargazer table'
+subtitle: 'Unit 9 Coding Homework - W203 Section 8'
+author: 'Chase Madson' 
+output: pdf_document
+---
+
+```{r, include=FALSE}
+library(tidyverse)
+library(fec16)
+library(stargazer)
+library(sandwich)
+
+campaigns_results <- 
+  results_house %>% 
+  inner_join(campaigns, by = 'cand_id') %>% 
+  mutate(candidate_party = case_when(
+    party == 'REP' ~ 'Republican', 
+    party == 'DEM' ~ 'Democrat', 
+    TRUE ~ 'Other Party') %>% 
+      factor(levels = c('Other Party', 
+                        'Democrat', 
+                        'Republican')))
+
+fit1 <- 
+  campaigns_results %>%
+  rename(`General Votes` = general_votes, 
+         `Total Disbursements` = ttl_disb, 
+         `Candidate Party:` = candidate_party) %>% 
+  lm(data = .,
+     formula = `General Votes` ~ 
+       `Total Disbursements` + `Candidate Party:`)
+```
+
+
+```{r, results='asis'}
+robust.se <-
+  fit1 %>%
+  vcovHC(type = 'HC') %>%
+  diag %>%
+  sqrt
+
+stargazer(fit1, fit1, 
+          header = FALSE, 
+          type = 'latex', 
+          title = 'Regressing General Votes on Party and Disbursements', 
+          se = list(NULL, robust.se), 
+          column.labels = c('Default S.E.',
+                            'Robust S.E.'), 
+          ci=TRUE, 
+          ci.level=0.95, 
+          single.row=TRUE)
+
+```
+
